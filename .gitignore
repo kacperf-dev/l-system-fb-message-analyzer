@@ -5,6 +5,8 @@ backend-ml/data/
 # --- Python ---
 backend/venv/
 backend/__pycache__/
+__pycache__/
+**/*.py[cod]
 backend/*.pyc
 backend/.env
 backend/out/
