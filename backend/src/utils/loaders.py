@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import json
 
+
 def fix_encoding_text(text: Optional[str]) -> str:
     """
     Fixes encoding of a string using ISO-8859-1 (Latin-1) encoding
@@ -13,9 +14,32 @@ def fix_encoding_text(text: Optional[str]) -> str:
         return ""
 
     try:
-        return text.encode('latin-1').decode('utf-8')
-    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text.encode("latin1").decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError, AttributeError):
         return text
+
+
+def load_json_with_correct_encoding(file_path: str) -> dict:
+    """
+    Loads JSON file with proper encoding for Facebook exports
+    :param file_path -- path to JSON file
+    :return -- dict
+    """
+    with open(file_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    def fix_dict(obj):
+        if isinstance(obj, dict):
+            return {k: fix_dict(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [fix_dict(item) for item in obj]
+        elif isinstance(obj, str):
+            return fix_encoding_text(obj)
+        else:
+            return obj
+
+    return fix_dict(data)
+
 
 def load_message_data(path_to_data: str) -> pd.DataFrame:
     """
@@ -30,12 +54,13 @@ def load_message_data(path_to_data: str) -> pd.DataFrame:
 
     for file in os.listdir(path_to_data):
         if file.endswith(".json"):
-            with open(os.path.join(path_to_data, file), "r", encoding="utf-8") as f:
-                data = json.load(f)
-                messages_raw = data.get("messages", [])
+            file_path = os.path.join(path_to_data, file)
+            data = load_json_with_correct_encoding(file_path)
 
-                if messages_raw:
-                    dfs.append(process_message_data(messages_raw))
+            messages_raw = data.get("messages", [])
+
+            if messages_raw:
+                dfs.append(process_message_data(messages_raw))
 
     if not dfs:
         return pd.DataFrame(columns=["send_datetime", "message", "sender_name"])
@@ -51,12 +76,44 @@ def process_message_data(data: List[Dict]) -> pd.DataFrame:
     """
     df = pd.DataFrame(data)
 
-    if 'content' in df.columns:
-        df['message'] = df['content'].apply(fix_encoding_text)
+    if "content" in df.columns:
+        df["message"] = df["content"].fillna("").apply(fix_encoding_text)
     else:
-        df['message'] = ""
+        df["message"] = ""
 
-    df['send_datetime'] = pd.to_datetime(df['timestamp_ms'], unit='ms')
+    df["sender_name"] = df["sender_name"].fillna("").apply(fix_encoding_text)
 
-    available_cols = [c for c in ['send_datetime', 'message', 'sender_name'] if c in df.columns]
-    return df[available_cols]
+    system_patterns = [
+        "zadzwonił", "zadzwoniła",
+        "odebrał", "odebrała",
+        "zmienił", "zmieniła",
+        "zareagował", "zareagowała",
+        "ustawił", "ustawiła",
+        "nieodebrane połączenie"
+        "połączenie wideo",
+        "motyw czatu"
+    ]
+
+    def is_real_text(row):
+        msg = row["message"].strip()
+        msg_type = row.get("type", "")
+
+        if msg_type == "Call":
+            return False
+
+        if not msg:
+            return False
+
+        if any(key in row for key in ["photos", "videos", "files", "audio_files"]) and not msg:
+            return False
+
+        if any(pattern in msg for pattern in system_patterns):
+            return False
+
+        return True
+
+    df["is_analyzable"] = df.apply(is_real_text, axis=1)
+
+    df["send_datetime"] = pd.to_datetime(df["timestamp_ms"], unit="ms")
+
+    return df[["send_datetime", "message", "sender_name", "is_analyzable"]]
