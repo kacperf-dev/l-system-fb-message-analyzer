@@ -1,12 +1,15 @@
+from src.analysis.SentimentAnalyzer import SentimentAnalyzer
 from src.utils import loaders
-import pandas as pd
 
 
 def main():
-    pd.set_option('display.max_columns', None)
-    pd.set_option('display.width', 1000)
-    data = loaders.load_message_data('data')
-    print(data)
+    conversation_data = loaders.load_message_data("data/")
+
+    sentiment_analyzer = SentimentAnalyzer()
+    messages_with_sentiment = sentiment_analyzer.analyze(conversation_data)
+
+    print(messages_with_sentiment)
+
 
 if __name__ == "__main__":
     main()
