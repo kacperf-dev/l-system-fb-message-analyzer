@@ -1,7 +1,8 @@
 from src.utils import loaders
 
 def main():
-    pass
+    data = loaders.load_message_data('data')
+    print(data)
 
 if __name__ == "__main__":
     main()
