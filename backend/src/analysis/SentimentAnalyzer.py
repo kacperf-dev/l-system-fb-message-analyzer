@@ -1,6 +1,7 @@
 import torch
 from transformers import pipeline
 import pandas as pd
+from tqdm import tqdm
 
 
 class SentimentAnalyzer:
@@ -30,7 +31,17 @@ class SentimentAnalyzer:
         """
         messages = list(conversation_data["message"])
         conversation_data.reset_index(drop=True, inplace=True)
-        sentiment_df = pd.DataFrame(self.analyzer(messages, batch_size=batch_size))
+
+        results = []
+
+        print(f"Analyzing {len(messages)} messages...")
+
+        for i in tqdm(range(0, len(messages), batch_size), desc="Sentiment Analysis"):
+            batch = messages[i:i+batch_size]
+            batch_results = self.analyzer(batch, truncation=True)
+            results.extend(batch_results)
+
+        sentiment_df = pd.DataFrame(results)
         sentiment_df.rename(columns={"label": "sentiment", "score": "certainty"}, inplace=True)
         conversation_data = conversation_data.join(sentiment_df)
 
