@@ -1,3 +1,5 @@
+import numpy as np
+
 class LSystemGenerator:
     """
     Generates word following an L-system grammar.
