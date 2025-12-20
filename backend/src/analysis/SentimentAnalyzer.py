@@ -28,7 +28,6 @@ class SentimentAnalyzer:
         """
         Runs sentiment analysis on messages in a conversation
         :param conversation_data -- Dataframe containing messages and metadata
-        :param batch_size -- batch size used for sentiment analysis
         :return -- input DataFrame with added sentiment name, certainty and sentiment score columns
         """
         analyzable_mask = conversation_data["is_analyzable"] == True
@@ -48,23 +47,24 @@ class SentimentAnalyzer:
             batch_results = self.analyzer(batch, truncation=True, padding=True)
             results.extend(batch_results)
 
-        sentiment_results_df = pd.DataFrame(results)
+        res_df = pd.DataFrame(results)
 
-        scores = []
-        for _, row in sentiment_results_df.iterrows():
+        def map_score(row):
             label = row["label"].lower()
             cert = row["score"]
 
-            if label == "positive":
-                scores.append(0.5 + (cert * 0.5))
-            elif label == "negative":
-                scores.append(0.5 - (cert * 0.5))
-            else:
-                scores.append(0.5)
+            if label == "positive": return 0.5 + (cert * 0.5)
+            if label == "negative": return 0.5 - (cert * 0.5)
+            return 0.5
 
-        to_analyze["sentiment_score"] = scores
+        to_analyze["sentiment_label"] = res_df["label"].values
+        to_analyze["certainty"] = res_df["score"].values
+        to_analyze["sentiment_score"] = res_df.apply(map_score, axis=1).values
 
+        conversation_data["sentiment_label"] = "neutral"
+        conversation_data["certainty"] = 0.0
         conversation_data["sentiment_score"] = 0.5
-        conversation_data.update((to_analyze[["sentiment_score"]]))
+
+        conversation_data.update(to_analyze[["sentiment_label", "certainty", "sentiment_score"]])
 
         return conversation_data

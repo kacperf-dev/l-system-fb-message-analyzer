@@ -1,43 +1,44 @@
-import json
 import os
+import pandas as pd
 
 from src.analysis.SentimentAnalyzer import SentimentAnalyzer
 from src.generators.TreeDataGenerator import TreeDataGenerator
 from src.services.LSystemGenerator import LSystemGenerator
-from src.utils import loaders
+from src.utils.loaders import load_message_data
 
 
 def main():
-    print("[1/4] Loading conversation data...")
-    conversation_data = loaders.load_message_data("data/")
+    DATA_DIR = "data/"
+    CACHE_PATH = "out/sentiment_cache.csv"
+    OUTPUT_PATH = "out/tree_word.txt"
 
-    print("[2/4] Analyzing sentiment...")
-    sentiment_analyzer = SentimentAnalyzer()
-    messages_with_sentiment = sentiment_analyzer.analyze(conversation_data)
+    os.makedirs("out", exist_ok=True)
 
-    print("[3/4] Generating tree data...")
-    tree_generator = TreeDataGenerator()
-    tree_data = tree_generator.generate_tree_data(messages_with_sentiment)
+    if os.path.exists(CACHE_PATH):
+        print(f"--- [CACHE] Found processed data: {CACHE_PATH} ---")
+        df = pd.read_csv(CACHE_PATH, parse_dates=["send_datetime"])
+    else:
+        print(f"--- [1/3] Loading raw data from {DATA_DIR} ---")
+        df = load_message_data(DATA_DIR)
 
-    if not os.path.exists("out"):
-        os.makedirs("out")
+        print(f"--- [2/3] Analyzing sentiment ---")
+        analyzer = SentimentAnalyzer(batch_size=64)
+        df = analyzer.analyze(df)
 
-    with open("out/tree_data.json", "w") as f:
-        json.dump(tree_data, f, indent=4)
+        print(f"--- [CACHE] Saving analysis results to {CACHE_PATH} ---")
+        df.to_csv(CACHE_PATH, index=False)
 
-    print("Success! Tree data saved to out/tree_data.json")
-
-    print("[4/4] Compilin L-system word...")
+    print("--- [3/3] Generating tree hierarchy and L-system word ---")
+    tree_data = TreeDataGenerator.generate_tree_data(df, contrast=2.5)
     lsystem = LSystemGenerator(tree_data)
-    tree_word = lsystem.generate()
+    word = lsystem.generate()
 
-    with open("out/tree_word.txt", "w") as f:
-        f.write(tree_word)
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+        f.write(word)
 
-    with open("../frontend/public/tree_word.txt", "w") as f:
-        f.write(tree_word)
-
-    print("Success! Tree word saved to out/tree_word.txt and frontend/public/tree_word.txt")
+    print(f"Success! L-system word saved to {OUTPUT_PATH}")
+    print(f"Number of analyzed months: {tree_data['meta']['total_months']}")
+    print(f"Calculated trunk height: {tree_data['meta']['trunk_height']}")
 
 
 if __name__ == "__main__":
