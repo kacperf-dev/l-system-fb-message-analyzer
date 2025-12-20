@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Dict, List, Optional
 import pandas as pd
 import os
@@ -29,6 +30,7 @@ def load_message_data(path_to_data: str) -> pd.DataFrame:
         raise FileNotFoundError(f"Path {path_to_data} does not exist")
 
     all_dfs = []
+    all_dates = []
 
     files = sorted([f for f in os.listdir(path_to_data) if f.endswith(".json")])
 
@@ -43,16 +45,18 @@ def load_message_data(path_to_data: str) -> pd.DataFrame:
 
         messages_raw = data.get("messages", [])
         if messages_raw:
-            all_dfs.append(process_message_data(messages_raw))
+            df = process_message_data(messages_raw)
+            all_dfs.append(df)
+            all_dates.extend([df["send_datetime"].min(), df["send_datetime"].max()])
 
     if not all_dfs:
         return pd.DataFrame(columns=["send_datetime", "message", "sender_name", "is_analyzable"])
 
     full_df = pd.concat(all_dfs, ignore_index=True)
     full_df = full_df.sort_values("send_datetime").reset_index(drop=True)
-    full_df = full_df[full_df["is_analyzable"] == True].copy()
 
     print(f"Import finished. Total analyzable messages: {len(full_df)}")
+    print(f"Time range: {full_df["send_datetime"].min()} - {full_df["send_datetime"].max()}")
     return full_df
 
 
@@ -64,12 +68,14 @@ def process_message_data(data: List[Dict]) -> pd.DataFrame:
     """
     df = pd.DataFrame(data)
 
-    if "content" in df.columns:
-        df["message"] = df["content"].fillna("").apply(fix_encoding_text)
-    else:
-        df["message"] = ""
+    df["send_datetime"] = pd.to_datetime(df["timestamp_ms"], unit="ms")
 
-    df["sender_name"] = df["sender_name"].fillna("").apply(fix_encoding_text)
+    def extract_text(row):
+        msg = row.get("content") or row.get("message") or ""
+        return fix_encoding_text(str(msg))
+
+    df["message"] = df.apply(extract_text, axis=1)
+    df["sender_name"] = df["sender_name"].fillna("Nieznany").apply(fix_encoding_text)
 
     system_patterns = [
         "zadzwonił", "zadzwoniła",
@@ -83,25 +89,13 @@ def process_message_data(data: List[Dict]) -> pd.DataFrame:
     ]
 
     def is_real_text(row):
-        msg = row["message"].strip()
-        msg_type = row.get("type", "")
-
-        if msg_type in ["Call", "VideoCall"]:
+        msg = str(row["message"]).strip()
+        if not msg or row.get("type") in ["Call", "VideoCall"]:
             return False
-
-        if not msg:
+        if any(pattern in msg.lower() for pattern in system_patterns):
             return False
-
-        if any(key in row for key in ["photos", "videos", "files", "audio_files"]) and not msg:
-            return False
-
-        if any(pattern in msg for pattern in system_patterns):
-            return False
-
         return True
 
     df["is_analyzable"] = df.apply(is_real_text, axis=1)
-
-    df["send_datetime"] = pd.to_datetime(df["timestamp_ms"], unit="ms")
 
     return df[["send_datetime", "message", "sender_name", "is_analyzable"]]
