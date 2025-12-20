@@ -8,48 +8,63 @@ class SentimentAnalyzer:
     """
     Analyzes sentiment of messages
     """
-    def __init__(self, model_name: str = "bardsai/twitter-sentiment-pl-base"):
+    def __init__(self, model_name: str = "bardsai/twitter-sentiment-pl-base", batch_size: int = 32):
         """
         Initializes sentiment analyzer engine
         :param model_name -- model chosen for sentiment analysis
         """
         self.device = 0 if torch.cuda.is_available() else -1
         print(f"Initializing model {model_name} on device {"GPU" if self.device == 0 else "CPU"}")
+        self.batch_size = batch_size
         self.analyzer = pipeline(
             task="text-classification",
             model=model_name,
-            device=self.device
+            device=self.device,
+            batch_size=self.batch_size
         )
 
 
-    def analyze(self, conversation_data: pd.DataFrame, batch_size: int = 64) -> pd.DataFrame:
+    def analyze(self, conversation_data: pd.DataFrame) -> pd.DataFrame:
         """
         Runs sentiment analysis on messages in a conversation
         :param conversation_data -- Dataframe containing messages and metadata
         :param batch_size -- batch size used for sentiment analysis
         :return -- input DataFrame with added sentiment name, certainty and sentiment score columns
         """
-        messages = list(conversation_data["message"])
-        conversation_data.reset_index(drop=True, inplace=True)
+        analyzable_mask = conversation_data["is_analyzable"] == True
+        to_analyze = conversation_data[analyzable_mask].copy()
 
+        if to_analyze.empty:
+            conversation_data["sentiment_score"] = 0.5
+            return conversation_data
+
+        messages = to_analyze["message"].tolist()
         results = []
 
-        print(f"Analyzing {len(messages)} messages...")
+        print(f"Analyzing {len(messages)} messages (Batch size: {self.batch_size})...")
 
-        for i in tqdm(range(0, len(messages), batch_size), desc="Sentiment Analysis"):
-            batch = messages[i:i+batch_size]
-            batch_results = self.analyzer(batch, truncation=True)
+        for i in tqdm(range(0, len(messages), self.batch_size), desc="Sentiment Analysis"):
+            batch = messages[i:i+self.batch_size]
+            batch_results = self.analyzer(batch, truncation=True, padding=True)
             results.extend(batch_results)
 
-        sentiment_df = pd.DataFrame(results)
-        sentiment_df.rename(columns={"label": "sentiment", "score": "certainty"}, inplace=True)
-        conversation_data = conversation_data.join(sentiment_df)
+        sentiment_results_df = pd.DataFrame(results)
+
+        scores = []
+        for _, row in sentiment_results_df.iterrows():
+            label = row["label"].lower()
+            cert = row["score"]
+
+            if label == "positive":
+                scores.append(0.5 + (cert * 0.5))
+            elif label == "negative":
+                scores.append(0.5 - (cert * 0.5))
+            else:
+                scores.append(0.5)
+
+        to_analyze["sentiment_score"] = scores
 
         conversation_data["sentiment_score"] = 0.5
-        is_pos = (conversation_data["sentiment"] == "positive") & (conversation_data["is_analyzable"])
-        is_neg = (conversation_data["sentiment"] == "negative") & (conversation_data["is_analyzable"])
-
-        conversation_data.loc[is_pos, "sentiment_score"] = conversation_data["certainty"]
-        conversation_data.loc[is_neg, "sentiment_score"] = 1 - conversation_data["certainty"]
+        conversation_data.update((to_analyze[["sentiment_score"]]))
 
         return conversation_data
