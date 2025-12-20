@@ -20,7 +20,7 @@ class TreeDataGenerator:
 
 
     @staticmethod
-    def generate_tree_data(conversation_data: pd.DataFrame, contrast: float = 2.0) -> list:
+    def generate_tree_data(conversation_data: pd.DataFrame, contrast: float = 2.0) -> dict:
         """
         Groups messages by year and month and calculates mean sentiment score as well as message count for each group
         :param conversation_data -- Dataframe containing messages and metadata
@@ -38,19 +38,33 @@ class TreeDataGenerator:
             lambda x: TreeDataGenerator._apply_contrast(x, factor=contrast)
         )
 
-        weekly_stats["avg_sentiment"] = weekly_stats["avg_sentiment"].astype(float)
-        weekly_stats["msg_count"] = weekly_stats["msg_count"].astype(int)
+        weekly_stats["normalized_count"] = np.log1p(weekly_stats["msg_count"]) * 5.0
+        weekly_stats["raw_count"] = weekly_stats["msg_count"].astype(int)
 
+        weekly_stats["avg_sentiment"] = weekly_stats["avg_sentiment"].astype(float)
+        weekly_stats["normalized_count"] = weekly_stats["normalized_count"].astype(float)
         weekly_stats["send_datetime"] = weekly_stats["send_datetime"].dt.strftime("%Y-%m-%d")
         weekly_stats["year_month"] = weekly_stats["send_datetime"].str[:7]
+
+        max_tree_height = 600
+        unique_months = weekly_stats["year_month"].nunique()
+
+        trunk_segment_h = max_tree_height / (unique_months + 2)
+        trunk_segment_h = max(10, min(trunk_segment_h, 40))
 
         tree_hierarchy = []
         for month, month_df in weekly_stats.groupby("year_month"):
             month_entry = {
                 "month": month,
-                "weeks": month_df.drop(columns=["year_month"]).to_dict(orient="records")
+                "weeks": month_df.drop(columns=["year_month", "msg_count"]).to_dict(orient="records")
             }
             tree_hierarchy.append(month_entry)
 
-        return tree_hierarchy
+        return {
+            "meta": {
+                "trunk_height": float(trunk_segment_h),
+                "total_months": int(unique_months),
+            },
+            "months": tree_hierarchy
+        }
 

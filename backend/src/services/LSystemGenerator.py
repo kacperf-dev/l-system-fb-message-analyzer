@@ -2,14 +2,15 @@ class LSystemGenerator:
     """
     Generates word following an L-system grammar.
     """
-    def __init__(self, tree_hierarchy: list):
-        self.tree_hierarchy = tree_hierarchy
+    def __init__(self, data: dict):
+        self.tree_hierarchy = data["months"]
+        self.trunk_h = data["meta"]["trunk_height"]
         self.current_direction = -1
 
 
     def generate(self) -> str:
         """
-        Main method initializing process of generating word. Iterates over every month.
+        Main method initializing process of generating word. Iterates over every month
         :return -- generated word
         """
         word = []
@@ -29,10 +30,9 @@ class LSystemGenerator:
         :param month_data -- dict containing month data
         :return -- substring of the main word
         """
-        h = 20
         sign = "+" if self.current_direction == 1 else "-"
+        month_word = f"T({self.trunk_h:.1f})[{sign}]"
 
-        month_word = f"T({h})[{sign}]"
         for week in month_data["weeks"]:
             month_word += self._produce_week(week)
         month_word += "]"
@@ -50,9 +50,10 @@ class LSystemGenerator:
         :param week_data:
         :return:
         """
+        w_len = week_data["normalized_count"]
         s = week_data["avg_sentiment"]
-        m = week_data["msg_count"]
+        raw_m = week_data["raw_count"]
 
-        w_len = 10 + (m * 0.5)
+        f_size = 5 + (np.sqrt(raw_m) * 0.5)
 
-        return f"M(8)[+W({w_len:.1f})F({s:.2f},{m})]"
+        return f"M(8)[+W({w_len:.1f})F({s:.2f},{f_size:.1f})]"
