@@ -33,7 +33,7 @@ class LSystemGenerator:
         :return -- substring of the main word
         """
         sign = "+" if self.current_direction == 1 else "-"
-        month_word = f"T({self.trunk_h:.1f})[{sign}]"
+        month_word = f"T({self.trunk_h:.1f})[{sign}"
 
         for week in month_data["weeks"]:
             month_word += self._produce_week(week)
